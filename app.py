@@ -14,10 +14,15 @@ st.markdown("""
 
 uploaded_file = st.file_uploader("העלה וידאו (MP4, MOV)", type=["mp4", "mov"])
 
+if uploaded_file is None:
+    st.info("כדי להתחיל עריכה, העלה קודם קובץ וידאו ואז לחץ על כפתור העריכה.")
+
+process_clicked = st.button("✂️ צור וידאו ערוך!", disabled=uploaded_file is None)
+
 if uploaded_file is not None:
     st.video(uploaded_file)
-    
-    if st.button("✂️ צור וידאו ערוך!"):
+
+if process_clicked and uploaded_file is not None:
         # Create temporary file to pass to openCV and MoviePy
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_input:
             temp_input.write(uploaded_file.read())
