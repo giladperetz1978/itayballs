@@ -1,8 +1,19 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from moviepy import VideoFileClip, concatenate_videoclips
 import os
+
+try:
+    from moviepy import VideoFileClip, concatenate_videoclips
+except ImportError:
+    from moviepy.editor import VideoFileClip, concatenate_videoclips
+
+
+def _make_subclip(clip, start_time, end_time):
+    # Keep compatibility across MoviePy versions.
+    if hasattr(clip, "subclip"):
+        return clip.subclip(start_time, end_time)
+    return clip.subclipped(start_time, end_time)
 
 def process_video(video_path, output_path, progress_callback=None):
     # Load YOLOv8 model (yolov8n.pt will be downloaded automatically)
@@ -83,7 +94,7 @@ def process_video(video_path, output_path, progress_callback=None):
         end_time = min(clip.duration, peak_time + 1.5)
         
         try:
-            subclip = clip.subclip(start_time, end_time)
+            subclip = _make_subclip(clip, start_time, end_time)
             subclips.append(subclip)
         except Exception as e:
             print(f"Error extracting subclip: {e}")
