@@ -1,11 +1,12 @@
 # itayballs
 
-אפליקציית Streamlit ליצירת היילייטס כדורסל אוטומטיים מסרטון משחק.
+אפליקציית כדורסל מקומית ליצירת היילייטס אוטומטיים מסרטון משחק.
 
 ## מה חשוב לדעת
 
 - GitHub Pages יודע להגיש קבצים סטטיים בלבד (HTML/CSS/JS).
-- האפליקציה הזו היא Python/Streamlit ולכן כדי שתעלה כמו בצילום (עם העלאת קובץ ועיבוד), צריך לפרוס אותה בשירות שתומך בהרצת Python.
+- האפליקציה כוללת גם גרסת Desktop מקומית ב-Tkinter ללא Streamlit.
+- מנוע העיבוד נשאר Python + YOLO ולכן כדי להריץ אותו צריך Python מותקן, אבל לא צריך הרשאות admin לבניית/הרצת גרסת ה-Desktop.
 
 ## פריסה מומלצת: Streamlit Community Cloud
 
@@ -24,3 +25,12 @@
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+## הרצת Desktop מקומית
+
+```bash
+pip install -r desktop_requirements.txt
+python desktop_app.py
+```
+
+הגרסה הזו פותחת חלון מקומי רגיל של Windows, מאפשרת לבחור קובץ וידאו וקובץ פלט, ומריצה את YOLO ישירות מהמחשב המקומי.

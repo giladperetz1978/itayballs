@@ -16,6 +16,10 @@ def _make_subclip(clip, start_time, end_time):
     return clip.subclipped(start_time, end_time)
 
 def process_video(video_path, output_path, progress_callback=None):
+    frame_stride = 2
+    min_shot_gap_seconds = 0.7
+    min_confidence = 0.12
+
     # Load YOLOv8 model (yolov8n.pt will be downloaded automatically)
     model = YOLO('yolov8n.pt')
     
@@ -35,13 +39,13 @@ def process_video(video_path, output_path, progress_callback=None):
         if not ret:
             break
             
-        # Optimization: Process every 3rd frame to speed up (3x faster)
+        # Optimization: Process every Nth frame to speed up inference.
         # Using imgsz=320 speeds up YOLO inference significantly
-        if frame_num % 3 == 0:
+        if frame_num % frame_stride == 0:
             results = model.predict(frame, classes=[32], verbose=False, imgsz=320)
             
             # Find the most confident ball
-            best_conf = 0.25  # Minimum confidence threshold
+            best_conf = min_confidence
             best_box = None
             for result in results:
                 boxes = result.boxes
@@ -61,25 +65,74 @@ def process_video(video_path, output_path, progress_callback=None):
             
     cap.release()
     
-    # Analyze trajectory to find "shots" (parabolic arcs)
-    # A simple peak detection in Y coordinate (smaller Y = higher on screen)
-    # We look for a sequence where Y decreases (ball goes up) then increases (ball goes down)
+    # Analyze trajectory to find "shots" (parabolic arcs).
+    # Smaller Y means higher on screen.
     shots_frames = []
     
     if len(ball_positions) > 5:
-        y_vals = [p[2] for p in ball_positions]
-        f_nums = [p[0] for p in ball_positions]
-        
-        # Check for local minimum in Y (which means highest point physically)
-        for i in range(2, len(y_vals) - 2):
-            if y_vals[i] < y_vals[i-1] and y_vals[i] < y_vals[i-2] and \
-               y_vals[i] < y_vals[i+1] and y_vals[i] < y_vals[i+2]:
-                
-                peak_frame = f_nums[i]
-                
-                # Check if it's far enough from previous shot (at least 3 seconds gap to avoid duplicates)
-                if not shots_frames or (peak_frame - shots_frames[-1]) > (fps * 3):
-                    shots_frames.append(peak_frame)
+        y_vals = np.array([p[2] for p in ball_positions], dtype=np.float32)
+        f_nums = np.array([p[0] for p in ball_positions], dtype=np.int32)
+
+        # Smooth noisy detections to make arc peaks easier to detect.
+        smooth_y = y_vals.copy()
+        if len(y_vals) >= 5:
+            kernel = np.ones(5, dtype=np.float32) / 5.0
+            smooth_y = np.convolve(y_vals, kernel, mode="same")
+
+        min_gap_frames = fps * min_shot_gap_seconds
+        local_window = 4
+        min_prominence_px = 7.0
+
+        def detect_candidates(prominence_threshold):
+            candidates = []
+            for i in range(local_window, len(smooth_y) - local_window):
+                center = smooth_y[i]
+                left = smooth_y[i - local_window:i]
+                right = smooth_y[i + 1:i + 1 + local_window]
+
+                # Center should be a local minimum (ball apex).
+                if center > np.min(left) or center > np.min(right):
+                    continue
+
+                left_prom = float(np.max(left) - center)
+                right_prom = float(np.max(right) - center)
+                if left_prom < prominence_threshold or right_prom < prominence_threshold:
+                    continue
+
+                # Also require velocity sign change around apex.
+                dy_prev = center - smooth_y[i - 1]
+                dy_next = smooth_y[i + 1] - center
+                if dy_prev >= -0.2 or dy_next <= 0.2:
+                    continue
+
+                candidates.append(int(f_nums[i]))
+            return candidates
+
+        primary_candidates = detect_candidates(min_prominence_px)
+        relaxed_candidates = primary_candidates if primary_candidates else detect_candidates(3.0)
+
+        for peak_frame in relaxed_candidates:
+            if not shots_frames or (peak_frame - shots_frames[-1]) > min_gap_frames:
+                shots_frames.append(peak_frame)
+
+        # Fallback 1: legacy monotonic apex rule (the earlier behavior that at least caught events).
+        if not shots_frames:
+            for i in range(2, len(y_vals) - 2):
+                moving_up = y_vals[i-2] >= y_vals[i-1] >= y_vals[i]
+                moving_down = y_vals[i] <= y_vals[i+1] <= y_vals[i+2]
+                if moving_up and moving_down:
+                    peak_frame = int(f_nums[i])
+                    if not shots_frames or (peak_frame - shots_frames[-1]) > min_gap_frames:
+                        shots_frames.append(peak_frame)
+
+        # Fallback 2: ultra-relaxed local minima to avoid zero-output runs.
+        if not shots_frames:
+            relaxed_gap_frames = fps * 0.45
+            for i in range(1, len(y_vals) - 1):
+                if y_vals[i] <= y_vals[i - 1] and y_vals[i] <= y_vals[i + 1]:
+                    peak_frame = int(f_nums[i])
+                    if not shots_frames or (peak_frame - shots_frames[-1]) > relaxed_gap_frames:
+                        shots_frames.append(peak_frame)
     
     if not shots_frames:
         return False, "לא זוהו מופעי קליעה (תנועה פרבולית) בסרטון."
