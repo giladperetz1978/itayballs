@@ -1,0 +1,9 @@
+Place your custom image here as:
+hero-image.jpg
+
+Expected relative path from project root:
+assets/hero-image.jpg
+
+Recommended:
+- Resolution: 1200x600 or wider
+- Format: JPG
